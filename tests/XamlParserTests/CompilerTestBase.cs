@@ -4,6 +4,7 @@ using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
+using XamlX;
 using XamlX.Ast;
 using XamlX.Parsers;
 using XamlX.Transform;
@@ -57,7 +58,7 @@ namespace XamlParserTests
             => Compile(xaml).create(prov);
         XamlDocument Compile(IXamlTypeBuilder<IXamlILEmitter> builder, IXamlType context, string xaml)
         {
-            var parsed = XDocumentXamlParser.Parse(xaml);
+            var parsed = XamlParser.Parse(xaml);
             var compiler = new XamlILCompiler(
                 Configuration,
                 new XamlLanguageEmitMappings<IXamlILEmitter, XamlILNodeEmitResult>(),
