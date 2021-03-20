@@ -1,20 +1,24 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Reflection.Emit;
 using XamlX.Ast;
+using XamlX.Emit;
+using XamlX.IL;
 using XamlX.Parsers;
+using XamlX.Runtime;
 using XamlX.Transform;
 using XamlX.TypeSystem;
-using XamlX.IL;
-using XamlX.Emit;
 
 namespace XamlParserTests
 {
     public partial class CompilerTestBase
     {
+#if CHECK_MSIL
+        static object s_asmLock = new object();
+#endif
+
         private readonly IXamlTypeSystem _typeSystem;
         public TransformerConfiguration Configuration { get; }
 
@@ -71,23 +75,26 @@ namespace XamlParserTests
                 "http://example.com/", null);
             return parsed;
         }
-        static object s_asmLock = new object();
-        
+
 #if !CECIL
+
+        // TODO: It's hack for AppDomain in SreTypeSystem
+        static CompilerTestBase() =>
+            AppDomain.CurrentDomain.Load(typeof(IXamlParentStackProviderV1).Assembly.FullName);
+
         public CompilerTestBase() : this(new SreTypeSystem())
         {
-            
         }
         
         protected (Func<IServiceProvider, object> create, Action<IServiceProvider, object> populate) Compile(string xaml)
         {
-            #if !NETCOREAPP && !NETSTANDARD
+#if NETFRAMEWORK
             var da = AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName(Guid.NewGuid().ToString("N")),
                 AssemblyBuilderAccess.RunAndSave,
                 Directory.GetCurrentDirectory());
-            #else
+#else
             var da = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(Guid.NewGuid().ToString("N")), AssemblyBuilderAccess.Run);
-            #endif
+#endif
 
             var dm = da.DefineDynamicModule("testasm.dll");
             var t = dm.DefineType(Guid.NewGuid().ToString("N"), TypeAttributes.Public);
@@ -106,16 +113,18 @@ namespace XamlParserTests
             var parsed = Compile(parserTypeBuilder, contextTypeDef, xaml);
 
             var created = t.CreateTypeInfo();
-            #if !NETCOREAPP && !NETSTANDARD
+#if NETFRAMEWORK
             dm.CreateGlobalFunctions();
+#if CHECK_MSIL
             // Useful for debugging the actual MSIL, don't remove
             lock (s_asmLock)
                 da.Save("testasm.dll");
-            #endif
+#endif
+#endif
 
             return GetCallbacks(created);
         }
-        #endif
+#endif
 
         (Func<IServiceProvider, object> create, Action<IServiceProvider, object> populate)
             GetCallbacks(Type created)
