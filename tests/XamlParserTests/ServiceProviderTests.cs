@@ -1,57 +1,21 @@
-using System.ComponentModel;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Linq;
-using System.Reflection;
 using XamlX.Runtime;
 using XamlX.TypeSystem;
 using Xunit;
 
 namespace XamlParserTests
 {
-
-    public class CallbackExtension
-    {
-        public object ProvideValue(IServiceProvider provider)
-        {
-            return provider.GetService<CallbackExtensionCallback>()(provider);
-        }
-    }
-
-    public delegate object CallbackExtensionCallback(IServiceProvider provider);
-
-    public class UnknownServiceUsageExtension
-    {
-        public object Return { get; set; }
-        public object ProvideValue(IServiceProvider provider)
-        {
-            Assert.Null(provider.GetService(typeof(string)));
-            return Return;
-        }
-    }
-    
-    public class ServiceProviderTestsClass
-    {
-        public string Id { get; set; }
-        public object Property { get; set; }
-        public ServiceProviderTestsClass Child { get; set; }
-        [Content]
-        public List<ServiceProviderTestsClass> Children { get; } = new List<ServiceProviderTestsClass>(); 
-    }
-    
     public class ServiceProviderTests : CompilerTestBase
     {
-        void CompileAndRun(string xaml, CallbackExtensionCallback cb, IXamlParentStackProviderV1 parentStack)
+        private void CompileAndRun(string xaml, CallbackExtensionCallback cb, IXamlParentStackProviderV1 parentStack)
             => Compile(xaml).create(new DictionaryServiceProvider
             {
                 [typeof(CallbackExtensionCallback)] = cb,
                 [typeof(IXamlParentStackProviderV1)] = parentStack
             });
-
-        class ListParentsProvider : List<object>, IXamlParentStackProviderV1
-        {
-            public IEnumerable<object> Parents => this;
-        }
         
         [Theory,
         InlineData(true),
@@ -135,11 +99,6 @@ namespace XamlParserTests
                 return "Value";
             }, null);
         }
-
-        public static void SetAttachedProperty(ServiceProviderTestsClass target, string value)
-        {
-            
-        }
         
         [Fact]
         public void ProvideValueTarget_Provides_Info_About_Properties()
@@ -148,53 +107,37 @@ namespace XamlParserTests
             CompileAndRun(@"
 <ServiceProviderTestsClass xmlns='test' 
     Property='{Callback}'
-    ServiceProviderTests.AttachedProperty='{Callback}'
+    ServiceProviderTestsClassForAttached.AttachedProperty='{Callback}'
 />", sp =>
             {
                 var pt = sp.GetService<ITestProvideValueTarget>();
                 Assert.IsType<ServiceProviderTestsClass>(pt.TargetObject);
                 if(num == 0)
+                {
                     Assert.Equal("Property", pt.TargetProperty);
+                }
                 else if (num == 1)
                 {
                     Assert.Equal("1", ((ServiceProviderTestsClass) pt.TargetObject).Property);
                     Assert.Equal("AttachedProperty", pt.TargetProperty);
                 }
                 else
+                {
                     throw new InvalidOperationException();
+                }
+
                 num++;
                 return num.ToString();
             }, null);
             Assert.Equal(2, num);
         }
-
-
-        class InnerProvider : IServiceProvider, ITestRootObjectProvider
-        {
-            private ITestRootObjectProvider _originalRootObjectProvider;
-            public object RootObject => "Definitely not the root object";
-            public object OriginalRootObject => _originalRootObjectProvider.RootObject;
-            public InnerProvider(IServiceProvider parent)
-            {
-                _originalRootObjectProvider = parent.GetService<ITestRootObjectProvider>();
-            }
-            
-            public object GetService(Type serviceType)
-            {
-                if (serviceType == typeof(ITestRootObjectProvider))
-                    return this;
-                return null;
-            }
-        }
-
-        public static IServiceProvider InnerProviderFactory(IServiceProvider outer) => new InnerProvider(outer);
         
         [Fact]
         public void Inner_Provider_Interception_Works()
         {
 
             Configuration.TypeMappings.InnerServiceProviderFactoryMethod =
-                Configuration.TypeSystem.GetType(typeof(ServiceProviderTests).FullName)
+                Configuration.TypeSystem.GetType(typeof(InnerProvider).FullName)
                     .FindMethod(m => m.Name == "InnerProviderFactory");
                     
             CompileAndRun(@"<ServiceProviderTestsClass xmlns='test' Property='{Callback}'/>", sp =>
@@ -207,7 +150,6 @@ namespace XamlParserTests
             }, null);
         }
 
-
         [Fact]
         public void Namespace_Info_Should_Be_Preserved()
         {
@@ -215,7 +157,7 @@ namespace XamlParserTests
 <ServiceProviderTestsClass 
     xmlns='test'
     xmlns:clr1='clr-namespace:System.Collections.Generic;assembly=netstandard'
-    xmlns:clr2='clr-namespace:Dummy;assembly=XamlParserTests'
+    xmlns:clr2='clr-namespace:Dummy;assembly=TestClasses'
     Property='{Callback}'/>", sp =>
             {
                 var nsList = sp.GetService<IXamlXmlNamespaceInfoProviderV1>().XmlNamespaces;
@@ -230,7 +172,7 @@ namespace XamlParserTests
                             new XamlXmlNamespaceInfoV1
                             {
                                 ClrNamespace = "XamlParserTests",
-                                ClrAssemblyName = typeof(ServiceProviderTests).Assembly.GetName().Name
+                                ClrAssemblyName = typeof(ServiceProviderTestsClass).Assembly.GetName().Name
                             }
                         },
                         ["clr1"] = new List<XamlXmlNamespaceInfoV1>
@@ -246,7 +188,7 @@ namespace XamlParserTests
                             new XamlXmlNamespaceInfoV1
                             {
                                 ClrNamespace = "Dummy",
-                                ClrAssemblyName = "XamlParserTests"
+                                ClrAssemblyName = "TestClasses"
                             }
                         }
                     });
@@ -315,10 +257,18 @@ namespace XamlParserTests
         [Fact]
         public void Unknown_Services_Should_Return_null()
         {
+            UnknownServiceUsageExtension.ProvideValueEventRequiredAssert += UnknownServiceUsageExtension_ProvideValueEventRequiredAssert;
+
             var res = (ServiceProviderTestsClass)CompileAndRun(
                 @"<ServiceProviderTestsClass xmlns='test' Property='{UnknownServiceUsage Return=123}'/>");
             Assert.Equal("123", res.Property);
-            
+
+            UnknownServiceUsageExtension.ProvideValueEventRequiredAssert -= UnknownServiceUsageExtension_ProvideValueEventRequiredAssert;
+        }
+
+        private void UnknownServiceUsageExtension_ProvideValueEventRequiredAssert(IServiceProvider provider)
+        {
+            Assert.Null(provider.GetService(typeof(string)));
         }
     }
 }

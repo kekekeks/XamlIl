@@ -4,26 +4,13 @@ using Xunit;
 
 namespace XamlParserTests
 {
-
-    public class DeferredContentTestsClass
-    {
-        [Content, DeferredContent]
-        public object DeferredContent { get; set; }
-        
-        
-        public object ObjectProperty { get; set; }
-    }
-    
     public class DeferredContentTests : CompilerTestBase
     {
-        DeferredContentTestsClass CompileAndRun(string xaml, CallbackExtensionCallback cb)
+        private DeferredContentTestsClass CompileAndRun(string xaml, CallbackExtensionCallback cb)
             => (DeferredContentTestsClass)Compile(xaml).create(new DictionaryServiceProvider
             {
                 [typeof(CallbackExtensionCallback)] = cb,
             });
-
-        
-        
 
         [Fact]
         public void DeferredContent_Should_Generate_Delegate_In_The_Target_Property()
@@ -40,32 +27,12 @@ namespace XamlParserTests
             Assert.Equal("321", e2.ObjectProperty);
             Assert.NotSame(e1, e2);
         }
-
-        class ConstantRootObjectProvider : ITestRootObjectProvider
-        {
-            public object RootObject { get; set; }
-        }
-        
-        public static Func<IServiceProvider, object> Customizer(Func<IServiceProvider, object> builder,
-            IServiceProvider parentServices)
-        {
-            var parentRoot = parentServices.GetService<ITestRootObjectProvider>().RootObject;
-            var cb = parentServices.GetService<CallbackExtensionCallback>();
-
-            return sp => builder(new DictionaryServiceProvider
-            {
-                [typeof(ITestRootObjectProvider)] = new ConstantRootObjectProvider {RootObject = parentRoot},
-                [typeof(CallbackExtensionCallback)] = cb,
-                Parent = sp
-            });
-        }
-        
         
         [Fact]
         public void DeferredContent_Delegate_Should_Be_Transformed_When_Configured()
         {
             Configuration.TypeMappings.DeferredContentExecutorCustomization =
-                Configuration.TypeSystem.FindType(typeof(DeferredContentTests).FullName)
+                Configuration.TypeSystem.FindType(typeof(CustomizerClass).FullName)
                     .FindMethod(m => m.Name == "Customizer");
 
 
